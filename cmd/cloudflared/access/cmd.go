@@ -54,7 +54,9 @@ Host {{.Hostname}}
 	fedrampFlag = "fedramp"
 )
 
-const sentryDSN = "https://56a9c9fa5c364ab28f34b14f35ea0f1b@sentry.io/189878"
+// sentryDSN is empty: upstream reports errors to Cloudflare's Sentry project, and an empty DSN
+// sends no report off this host.
+const sentryDSN = ""
 
 var (
 	shutdownC chan struct{}
@@ -82,7 +84,7 @@ func Commands() []*cli.Command {
 			Usage:    "access <subcommand>",
 			Flags: []cli.Flag{&cli.BoolFlag{
 				Name:  fedrampFlag,
-				Usage: "Force the FedRAMP token transfer relay for Access authentication. Not usually needed: cloudflared selects it automatically when the application's verified auth domain is a FedRAMP domain (*.fed.cloudflareaccess.com).",
+				Usage: "Force the FedRAMP token transfer relay for Access authentication. Not usually needed: cloudflared selects it automatically when the application's verified auth domain is a FedRAMP domain (a .fed subdomain of the Access domain).",
 			}},
 			Description: `Cloudflare Access protects internal resources by securing, authenticating and monitoring access
 			per-user and by application. With Cloudflare Access, only authenticated users with the required permissions are

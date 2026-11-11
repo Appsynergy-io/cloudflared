@@ -14,12 +14,12 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
+
+	"github.com/cloudflare/cloudflared/apsy"
 )
 
 const (
 	accessCertPath         = "/cdn-cgi/access/certs"
-	accessDomainSuffix     = ".cloudflareaccess.com"
-	fedAccessDomainSuffix  = ".fed" + accessDomainSuffix
 	httpsScheme            = "https"
 	jwksCacheSuffix        = "-jwks"
 	maxJWKSResponseSize    = 1 << 20
@@ -85,6 +85,13 @@ func parseAuthDomain(authDomain string) (url.URL, error) {
 		return url.URL{}, fmt.Errorf("failed to parse auth_domain %q: %w", authDomain, err)
 	}
 	hostname := strings.ToLower(parsed.Hostname())
+	// An auth domain is under the Access domain, upstream's cloudflareaccess.com, which is apart
+	// from the platform suffix: no other host is asked for keys.
+	accessDomain, err := apsy.AccessDomain()
+	if err != nil {
+		return url.URL{}, err
+	}
+	accessDomainSuffix := "." + accessDomain
 	if !strings.HasSuffix(hostname, accessDomainSuffix) {
 		return url.URL{}, fmt.Errorf("auth_domain %q does not end with %q", authDomain, accessDomainSuffix)
 	}
@@ -93,14 +100,18 @@ func parseAuthDomain(authDomain string) (url.URL, error) {
 
 // isFedAuthDomain reports whether authDomain is a FedRAMP Access auth domain.
 // authDomain is expected to be the verified AppInfo.AuthDomain; it is
-// re-normalized here so only an exact ".fed.cloudflareaccess.com" hostname
+// re-normalized here so only an exact ".fed." plus Access domain hostname
 // suffix matches.
 func isFedAuthDomain(authDomain string) bool {
 	parsed, err := parseAuthDomain(authDomain)
 	if err != nil {
 		return false
 	}
-	return strings.HasSuffix(parsed.Hostname(), fedAccessDomainSuffix)
+	accessDomain, err := apsy.AccessDomain()
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(parsed.Hostname(), ".fed."+accessDomain)
 }
 
 // fetchJWKS fetches the JWKS from the auth domain's certs endpoint over HTTPS.

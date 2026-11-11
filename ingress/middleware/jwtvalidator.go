@@ -7,6 +7,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 
+	"github.com/cloudflare/cloudflared/apsy"
 	"github.com/cloudflare/cloudflared/credentials"
 )
 
@@ -14,10 +15,15 @@ const (
 	headerKeyAccessJWTAssertion = "Cf-Access-Jwt-Assertion"
 )
 
-var (
-	cloudflareAccessCertsURL    = "https://%s.cloudflareaccess.com"
-	cloudflareAccessFedCertsURL = "https://%s.fed.cloudflareaccess.com"
-)
+// teamDomainURL is the team domain of access.teamName: upstream's {teamName}.cloudflareaccess.com
+// (or {teamName}.fed.cloudflareaccess.com) under the Access domain.
+func teamDomainURL(teamName, environment string) (string, error) {
+	host, err := apsy.AccessTeamDomain(teamName, environment == credentials.FedEndpoint)
+	if err != nil {
+		return "", fmt.Errorf("access.teamName %q: %w", teamName, err)
+	}
+	return "https://" + host, nil
+}
 
 // JWTValidator is an implementation of Verifier that validates access based JWT tokens.
 type JWTValidator struct {
@@ -25,12 +31,10 @@ type JWTValidator struct {
 	audTags []string
 }
 
-func NewJWTValidator(teamName string, environment string, audTags []string) *JWTValidator {
-	var certsURL string
-	if environment == credentials.FedEndpoint {
-		certsURL = fmt.Sprintf(cloudflareAccessFedCertsURL, teamName)
-	} else {
-		certsURL = fmt.Sprintf(cloudflareAccessCertsURL, teamName)
+func NewJWTValidator(teamName string, environment string, audTags []string) (*JWTValidator, error) {
+	certsURL, err := teamDomainURL(teamName, environment)
+	if err != nil {
+		return nil, err
 	}
 
 	certsEndpoint := fmt.Sprintf("%s/cdn-cgi/access/certs", certsURL)
@@ -45,7 +49,7 @@ func NewJWTValidator(teamName string, environment string, audTags []string) *JWT
 	return &JWTValidator{
 		IDTokenVerifier: verifier,
 		audTags:         audTags,
-	}
+	}, nil
 }
 
 func (v *JWTValidator) Name() string {

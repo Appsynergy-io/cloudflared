@@ -360,7 +360,10 @@ func validateIngress(ingress []config.UnvalidatedIngressRule, defaults OriginReq
 				return Ingress{}, err
 			}
 			if access.Required {
-				verifier := middleware.NewJWTValidator(access.TeamName, access.Environment, access.AudTag)
+				verifier, err := middleware.NewJWTValidator(access.TeamName, access.Environment, access.AudTag)
+				if err != nil {
+					return Ingress{}, err
+				}
 				handlers = append(handlers, verifier)
 			}
 		}

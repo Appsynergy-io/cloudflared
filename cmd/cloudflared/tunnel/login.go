@@ -11,6 +11,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 
+	"github.com/cloudflare/cloudflared/apsy"
 	"github.com/cloudflare/cloudflared/cmd/cloudflared/cliutil"
 	cfdflags "github.com/cloudflare/cloudflared/cmd/cloudflared/flags"
 	"github.com/cloudflare/cloudflared/config"
@@ -20,25 +21,45 @@ import (
 )
 
 const (
-	baseLoginURL         = "https://dash.cloudflare.com/argotunnel"
-	callbackURL          = "https://login.cloudflareaccess.org/"
-	fedBaseLoginURL      = "https://dash.fed.cloudflare.com/argotunnel"
-	fedCallbackStoreURL  = "https://login.fed.cloudflareaccess.org/"
 	fedRAMPParamName     = "fedramp"
 	loginURLParamName    = "loginURL"
 	callbackURLParamName = "callbackURL"
 )
 
+// The login URLs are upstream's dash.cloudflare.com/argotunnel and its .fed twin under the
+// platform suffix; the callback URLs are upstream's login.cloudflareaccess.org/ and its .fed twin
+// under the Access login domain, apart from the suffix as cloudflareaccess.org is.
+func baseLoginURL() (string, error)        { return hostURL(apsy.Host, "dash", "/argotunnel") }
+func callbackURL() (string, error)         { return hostURL(apsy.AccessLoginHost, "login", "/") }
+func fedBaseLoginURL() (string, error)     { return hostURL(apsy.Host, "dash.fed", "/argotunnel") }
+func fedCallbackStoreURL() (string, error) { return hostURL(apsy.AccessLoginHost, "login.fed", "/") }
+
+func hostURL(host func(string) (string, error), label, path string) (string, error) {
+	h, err := host(label)
+	if err != nil {
+		return "", err
+	}
+	return "https://" + h + path, nil
+}
+
+// orDefault is a flag's value, or its default read now, whose error names the setting it lacks.
+func orDefault(value string, def func() (string, error)) (string, error) {
+	if value != "" {
+		return value, nil
+	}
+	return def()
+}
+
 var (
 	loginURL = &cli.StringFlag{
 		Name:  loginURLParamName,
-		Value: baseLoginURL,
-		Usage: "The URL used to login (default is https://dash.cloudflare.com/argotunnel)",
+		Value: cliutil.PlatformDefault(baseLoginURL),
+		Usage: "The URL used to login (default is https://dash.<platform suffix>/argotunnel)",
 	}
 	callbackStore = &cli.StringFlag{
 		Name:  callbackURLParamName,
-		Value: callbackURL,
-		Usage: "The URL used for the callback (default is https://login.cloudflareaccess.org/)",
+		Value: cliutil.PlatformDefault(callbackURL),
+		Usage: "The URL used for the callback (default is https://login.<Access login domain>/)",
 	}
 	fedramp = &cli.BoolFlag{
 		Name:    fedRAMPParamName,
@@ -80,8 +101,19 @@ func login(c *cli.Context) error {
 
 	isFEDRamp := c.Bool(fedRAMPParamName)
 	if isFEDRamp {
-		baseloginURL = fedBaseLoginURL
-		callbackStoreURL = fedCallbackStoreURL
+		if baseloginURL, err = fedBaseLoginURL(); err != nil {
+			return err
+		}
+		if callbackStoreURL, err = fedCallbackStoreURL(); err != nil {
+			return err
+		}
+	} else {
+		if baseloginURL, err = orDefault(baseloginURL, baseLoginURL); err != nil {
+			return err
+		}
+		if callbackStoreURL, err = orDefault(callbackStoreURL, callbackURL); err != nil {
+			return err
+		}
 	}
 
 	loginURL, err := url.Parse(baseloginURL)

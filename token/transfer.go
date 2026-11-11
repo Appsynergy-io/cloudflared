@@ -12,13 +12,27 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
+
+	"github.com/cloudflare/cloudflared/apsy"
 )
 
 const (
-	baseStoreURL  = "https://login.cloudflareaccess.org/"
-	fedStoreURL   = "https://login.fed.cloudflareaccess.org/"
 	clientTimeout = time.Second * 60
 )
+
+// transferStoreURL is the transfer service, upstream's login.cloudflareaccess.org/ (and
+// login.fed.cloudflareaccess.org/ for FedRAMP) under the Access login domain.
+func transferStoreURL(fedramp bool) (string, error) {
+	label := "login"
+	if fedramp {
+		label = "login.fed"
+	}
+	host, err := apsy.AccessLoginHost(label)
+	if err != nil {
+		return "", err
+	}
+	return "https://" + host + "/", nil
+}
 
 // Test seams; production code always uses OpenBrowser and the default HTTP transport.
 var (
@@ -36,6 +50,11 @@ var (
 // If urlFilePath is non-empty, the generated auth URL is written to that path so
 // other waiting processes can display it to the user. Pass "" to skip.
 func RunTransfer(transferURL *url.URL, appAUD, resourceName, key, value string, shouldEncrypt bool, useHostOnly bool, autoClose bool, fedramp bool, log *zerolog.Logger, urlFilePath string) ([]byte, error) {
+	// Named before a browser opens: without an Access login domain there is no service to poll.
+	storeURL, err := transferStoreURL(fedramp)
+	if err != nil {
+		return nil, err
+	}
 	encrypterClient, err := NewEncrypter()
 	if err != nil {
 		return nil, err
@@ -59,12 +78,6 @@ func RunTransfer(transferURL *url.URL, appAUD, resourceName, key, value string, 
 	}
 
 	var resourceData []byte
-
-	storeURL := baseStoreURL
-
-	if fedramp {
-		storeURL = fedStoreURL
-	}
 
 	if shouldEncrypt {
 		buf, key, err := transferRequest(storeURL+"transfer/"+encrypterClient.PublicKey(), log)

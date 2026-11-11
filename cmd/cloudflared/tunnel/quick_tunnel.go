@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/urfave/cli/v2"
 
+	"github.com/cloudflare/cloudflared/apsy"
 	"github.com/cloudflare/cloudflared/cmd/cloudflared/cliutil"
 	"github.com/cloudflare/cloudflared/cmd/cloudflared/flags"
 	"github.com/cloudflare/cloudflared/config"
@@ -111,12 +112,18 @@ func quickTunnelStartupLines(
 	}
 }
 
+// quickServiceURL is the quick-tunnel service, upstream's api.trycloudflare.com under the Quick
+// Tunnel domain, apart from the platform suffix as trycloudflare.com is.
+func quickServiceURL() (string, error) {
+	return hostURL(apsy.QuickTunnelHost, "api", "")
+}
+
 // RunQuickTunnel requests a tunnel from the specified service.
-// We use this to power quick tunnels on trycloudflare.com, but the
+// We use this to power quick tunnels under the Quick Tunnel domain, but the
 // service is open-source and could be used by anyone.
 func RunQuickTunnel(sc *subcommandContext) error {
 	sc.log.Info().Msg(disclaimer)
-	sc.log.Info().Msg("Requesting new quick Tunnel on trycloudflare.com...")
+	sc.log.Info().Msgf("Requesting new quick Tunnel on %s...", sc.c.String("quick-service"))
 
 	allowedMail := sc.c.StringSlice(flags.AllowedMail)
 	isProtected := len(allowedMail) > 0

@@ -15,12 +15,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cloudflare/cloudflared/apsy"
 )
 
 const (
-	QuickTunnelAuthCallbackPath       = "/.cloudflared/qt-auth/callback"
-	QuickTunnelAuthBrokerAuthorizeURL = "https://login.trycloudflare.com/authorize"
-	QuickTunnelAuthStateTTL           = 10 * time.Minute
+	QuickTunnelAuthCallbackPath = "/.cloudflared/qt-auth/callback"
+	QuickTunnelAuthStateTTL     = 10 * time.Minute
 
 	quickTunnelAuthSigningKeySize      = 32
 	quickTunnelAuthStateSize           = 32
@@ -63,7 +64,11 @@ type QuickTunnelAuthLogin struct {
 }
 
 func NewQuickTunnelAuthStateManager(hostname string) (*QuickTunnelAuthStateManager, error) {
-	brokerURL, err := url.Parse(QuickTunnelAuthBrokerAuthorizeURL)
+	rawBrokerURL, err := QuickTunnelAuthBrokerAuthorizeURL()
+	if err != nil {
+		return nil, err
+	}
+	brokerURL, err := url.Parse(rawBrokerURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse broker URL: %w", err)
 	}
@@ -88,21 +93,20 @@ func NewQuickTunnelAuthStateManager(hostname string) (*QuickTunnelAuthStateManag
 }
 
 // isQuickTunnelHostname reports whether hostname is a valid protected Quick
-// Tunnel hostname of the form <label>.trycloudflare.com.
+// Tunnel hostname of the form <label>.QUICK_TUNNEL_DOMAIN (upstream's <label>.trycloudflare.com).
 //
 // The first label must be a non-empty DNS label using only ASCII letters,
 // digits, and hyphens, and it must not start or end with a hyphen.
 func isQuickTunnelHostname(hostname string) bool {
-	labels := strings.Split(hostname, ".")
-	if len(labels) != 3 {
+	domain, err := apsy.QuickTunnelDomain()
+	if err != nil {
+		return false
+	}
+	label, ok := strings.CutSuffix(hostname, "."+domain)
+	if !ok || strings.Contains(label, ".") {
 		return false
 	}
 
-	if labels[1] != "trycloudflare" || labels[2] != "com" {
-		return false
-	}
-
-	label := labels[0]
 	if label == "" || len(label) > quickTunnelAuthMaxLabelLength {
 		return false
 	}
@@ -274,9 +278,9 @@ func (m *QuickTunnelAuthStateManager) newStateCookie(state, returnPath string, e
 	}
 
 	encodedSignature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	// The broker callback is a cross-site POST from login.trycloudflare.com
-	// to <tunnel>.trycloudflare.com. Because trycloudflare.com is a public
-	// suffix, those hosts are treated as separate sites by browsers, so a
+	// The broker callback is a cross-site POST from login.QUICK_TUNNEL_DOMAIN
+	// to <tunnel>.QUICK_TUNNEL_DOMAIN. Where that domain is a public suffix,
+	// as trycloudflare.com is, those hosts are separate sites to browsers, so a
 	// Lax cookie would not be sent on the callback. SameSite=None is required
 	// here, while Secure and HttpOnly remain enabled.
 	// #nosec G124 -- cross-site callback requires SameSite=None

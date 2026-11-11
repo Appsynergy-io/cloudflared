@@ -12,11 +12,12 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/pkg/errors"
 	"golang.org/x/net/idna"
+
+	"github.com/cloudflare/cloudflared/apsy"
 )
 
 const (
 	defaultScheme   = "http"
-	accessDomain    = "cloudflareaccess.com"
 	accessCertPath  = "/cdn-cgi/access/certs"
 	accessJwtHeader = "Cf-access-jwt-assertion"
 )
@@ -204,6 +205,11 @@ func (a *Access) Validate(ctx context.Context, jwt string) error {
 		return fmt.Errorf("token is nil: %s", jwt)
 	}
 
+	// The Access domain, upstream's cloudflareaccess.com, apart from the platform suffix.
+	accessDomain, err := apsy.AccessDomain()
+	if err != nil {
+		return err
+	}
 	if !strings.HasSuffix(token.Issuer, accessDomain) {
 		return fmt.Errorf("token has non-cloudflare issuer of %s: %s", token.Issuer, jwt)
 	}

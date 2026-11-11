@@ -19,7 +19,6 @@ import (
 )
 
 const (
-	quickTunnelAuthBrokerJWKSURL = "https://login.trycloudflare.com/.well-known/jwks.json"
 	// Five seconds bounds the complete refresh sequence, including retries, so
 	// one refresh cannot stall the serialized worker indefinitely.
 	quickTunnelAuthBrokerJWKSTimeout = 5 * time.Second
@@ -83,7 +82,11 @@ type QuickTunnelAuthAssertionValidator struct {
 
 // NewQuickTunnelAuthAssertionValidator creates a broker assertion validator.
 func NewQuickTunnelAuthAssertionValidator() (*QuickTunnelAuthAssertionValidator, error) {
-	jwksURL, err := url.Parse(quickTunnelAuthBrokerJWKSURL)
+	rawJWKSURL, err := brokerJWKSURL()
+	if err != nil {
+		return nil, err
+	}
+	jwksURL, err := url.Parse(rawJWKSURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse Quick Tunnel authentication broker JWKS URL: %w", err)
 	}

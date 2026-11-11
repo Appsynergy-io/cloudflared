@@ -44,8 +44,9 @@ import (
 )
 
 const (
-	//nolint:gosec // This is the Sentry DSN for cloudflared which is safe to be public
-	sentryDSN = "https://56a9c9fa5c364ab28f34b14f35ea0f1b:3e8827f6f9f740738eb11138f7bebb68@sentry.io/189878"
+	// sentryDSN is empty: upstream reports errors to Cloudflare's Sentry project, and an empty DSN
+	// sends no report off this host.
+	sentryDSN = ""
 
 	LogFieldExpandedPath        = "expandedPath"
 	LogFieldPIDPathname         = "pidPathname"
@@ -255,6 +256,12 @@ func TunnelCommand(c *cli.Context) error {
 	shouldRunQuickTunnel := c.IsSet("url") || c.IsSet(ingress.HelloWorldFlag)
 	if c.String("quick-service") != "" && shouldRunQuickTunnel {
 		return RunQuickTunnel(sc)
+	}
+	if shouldRunQuickTunnel && !c.IsSet("quick-service") {
+		// No default service: the build names no Quick Tunnel domain.
+		if _, err := quickServiceURL(); err != nil {
+			return err
+		}
 	}
 
 	// If user provides a config, check to see if they meant to use `tunnel run` instead
@@ -870,7 +877,7 @@ func tunnelFlags(shouldHide bool) []cli.Flag {
 		altsrc.NewStringFlag(&cli.StringFlag{
 			Name:   "quick-service",
 			Usage:  "URL for a service which manages unauthenticated 'quick' tunnels.",
-			Value:  "https://api.trycloudflare.com",
+			Value:  cliutil.PlatformDefault(quickServiceURL),
 			Hidden: true,
 		}),
 		altsrc.NewStringSliceFlag(&cli.StringSliceFlag{

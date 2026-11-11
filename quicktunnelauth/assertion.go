@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	quickTunnelAuthBrokerIssuer        = "https://login.trycloudflare.com"
 	quickTunnelAuthBrokerAudience      = "cloudflared-quick-tunnel"
 	quickTunnelAuthBrokerAssertionType = "quick_tunnel_auth"
 
@@ -131,9 +130,13 @@ func (v *QuickTunnelAuthAssertionValidator) validateClaims(
 		return nil, errors.New("broker assertion Access identity expiry is missing")
 	}
 
+	issuer, err := brokerIssuer()
+	if err != nil {
+		return nil, err
+	}
 	now := v.now().UTC()
 	if err := claims.ValidateWithLeeway(jwt.Expected{
-		Issuer:      quickTunnelAuthBrokerIssuer,
+		Issuer:      issuer,
 		AnyAudience: jwt.Audience{quickTunnelAuthBrokerAudience},
 		Time:        now,
 	}, quickTunnelAuthBrokerClockSkew); err != nil {
