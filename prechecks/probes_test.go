@@ -12,21 +12,21 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/mock/gomock"
 
+	"github.com/cloudflare/cloudflared/apsy"
 	"github.com/cloudflare/cloudflared/edgediscovery/allregions"
 	"github.com/cloudflare/cloudflared/mocks"
 )
 
 // Test constants for repeated string values.
-const (
-	testRegion1Global = region1Global
-	testRegion2Global = region2Global
-	testRegion1US     = region1US
-	testRegion2US     = region2US
-	testRegion1Fed    = region1Fed
-	testRegion2Fed    = region2Fed
-
-	testEdgePort = 7844
+// The region labels name the platform's SRV record, whatever suffix the test process has.
+var (
+	testRegion1Global, testRegion2Global = regionTargets("")
+	testRegion1US, testRegion2US         = regionTargets("us")
+	testRegion1Fed, testRegion2Fed       = regionTargets("fed")
+	testRegion1EU, testRegion2EU         = regionTargets("eu")
 )
+
+const testEdgePort = 7844
 
 // testTLSConfig is a minimal *tls.Config for tests. Mock dialers never
 // perform a real TLS handshake, so an empty config is sufficient.
@@ -103,10 +103,10 @@ func TestProbeDNS_ResolverError(t *testing.T) {
 	assert.Empty(t, targets[0].Addrs)
 	assert.Equal(t, Fail, targets[0].DNSResult.ProbeStatus)
 	assert.Equal(t, "DNS lookup failed", targets[0].DNSResult.Details)
-	assert.Contains(t, targets[0].DNSResult.Action, testRegion1Global)
+	assert.Contains(t, targets[0].DNSResult.Action, srvTarget(""))
 	assert.Empty(t, targets[1].Addrs)
 	assert.Equal(t, Fail, targets[1].DNSResult.ProbeStatus)
-	assert.Contains(t, targets[1].DNSResult.Action, testRegion2Global)
+	assert.Contains(t, targets[1].DNSResult.Action, srvTarget(""))
 }
 
 func TestProbeDNS_EmptyResults(t *testing.T) {
@@ -353,11 +353,11 @@ func TestRegionTargets(t *testing.T) {
 			wantRegion2: testRegion2Fed,
 		},
 		{
-			name:        "unknown region defaults to global hostnames",
+			name:        "any other region prefixes the record as upstream's lookup does",
 			region:      "eu",
-			wantRegion1: testRegion1Global,
-			wantRegion2: testRegion2Global,
-			description: "Unknown regions should default to global hostnames",
+			wantRegion1: testRegion1EU,
+			wantRegion2: testRegion2EU,
+			description: "The label is the record discovery reads",
 		},
 	}
 
@@ -535,4 +535,12 @@ func TestResolveStaticEdge_PartiallyValid(t *testing.T) {
 	assert.Equal(t, "127.0.0.2:7844", targets[2].DNSResult.Target)
 	assert.Equal(t, Pass, targets[2].DNSResult.ProbeStatus)
 	assert.NotEmpty(t, targets[2].Addrs)
+}
+
+func TestRegionTargetsNameThePlatformsRecordNotCloudflares(t *testing.T) {
+	t.Setenv(apsy.SuffixEnv, "platform.example")
+	r1, r2 := regionTargets("us")
+	assert.Equal(t, "_us-v2-origintunneld._tcp.platform.example #1", r1)
+	assert.Equal(t, "_us-v2-origintunneld._tcp.platform.example #2", r2)
+	assert.NotContains(t, actionDNSFail+actionSRVFail, "1.1.1.1")
 }

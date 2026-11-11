@@ -16,6 +16,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/cloudflare/cloudflared/apsy"
 	network "github.com/cloudflare/cloudflared/diagnostic/network"
 	"github.com/cloudflare/cloudflared/edgediscovery/allregions"
 	"github.com/cloudflare/cloudflared/features"
@@ -173,17 +174,38 @@ func collectNetworkResultRoutine(
 	results <- networkCollectionResult{name, hops, raw, err}
 }
 
+// Redeclared so it can be overridden in tests.
+var diagLookupSRV = net.LookupSRV
+
+// edgeHosts are what the traceroutes run to: every target the platform's edge SRV record names,
+// where upstream traces Cloudflare's two region hostnames. None when no platform suffix is
+// known or the record does not resolve.
+func edgeHosts() []string {
+	suffix, err := apsy.Suffix()
+	if err != nil {
+		return nil
+	}
+	_, srvs, err := diagLookupSRV("v2-origintunneld", "tcp", suffix)
+	if err != nil {
+		return nil
+	}
+	hosts := make([]string, 0, len(srvs))
+	for _, srv := range srvs {
+		hosts = append(hosts, strings.TrimSuffix(srv.Target, "."))
+	}
+	return hosts
+}
+
 func gatherNetworkInformation(ctx context.Context) map[string]networkCollectionResult {
 	networkCollector := network.NetworkCollectorImpl{}
 
-	hostAndIPversionPairs := []struct {
+	type hostAndIPversion struct {
 		host  string
 		useV4 bool
-	}{
-		{"region1.v2.argotunnel.com", true},
-		{"region1.v2.argotunnel.com", false},
-		{"region2.v2.argotunnel.com", true},
-		{"region2.v2.argotunnel.com", false},
+	}
+	var hostAndIPversionPairs []hostAndIPversion
+	for _, host := range edgeHosts() {
+		hostAndIPversionPairs = append(hostAndIPversionPairs, hostAndIPversion{host, true}, hostAndIPversion{host, false})
 	}
 
 	// the number of results is known thus use len to avoid footguns

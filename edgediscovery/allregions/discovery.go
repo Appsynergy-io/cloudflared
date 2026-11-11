@@ -10,20 +10,20 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 
+	"github.com/cloudflare/cloudflared/apsy"
 	"github.com/cloudflare/cloudflared/management"
 )
 
 const (
-	// Used to discover HA origintunneld servers
+	// Used to discover HA origintunneld servers, under the platform suffix
+	// (apsy.Suffix) where upstream names argotunnel.com
 	srvService = "v2-origintunneld"
 	srvProto   = "tcp"
-	srvName    = "argotunnel.com"
 
 	// Used to fallback to DoT when we can't use the default resolver to
-	// discover HA origintunneld servers (GitHub issue #75).
-	dotServerName = "cloudflare-dns.com"
-	dotServerAddr = "1.1.1.1:853"
-	dotTimeout    = 15 * time.Second
+	// discover HA origintunneld servers (GitHub issue #75). The resolver is
+	// apsy.DoTResolver, where upstream dials Cloudflare's 1.1.1.1.
+	dotTimeout = 15 * time.Second
 
 	logFieldAddress = "address"
 )
@@ -98,19 +98,26 @@ type EdgeAddr struct {
 // See also: Go feature request for stdlib-supported DoH: https://github.com/golang/go/issues/27552
 var fallbackLookupSRV = lookupSRVWithDOT
 
-var friendlyDNSErrorLines = []string{
-	`Please try the following things to diagnose this issue:`,
-	`  1. ensure that argotunnel.com is returning "origintunneld" service records.`,
-	`     Run your system's equivalent of: dig srv _origintunneld._tcp.argotunnel.com`,
-	`  2. ensure that your DNS resolver is not returning compressed SRV records.`,
-	`     See GitHub issue https://github.com/golang/go/issues/27546`,
-	`     For example, you could use Cloudflare's 1.1.1.1 as your resolver:`,
-	`     https://developers.cloudflare.com/1.1.1.1/setting-up-1.1.1.1/`,
+func friendlyDNSErrorLines(srvName string) []string {
+	return []string{
+		`Please try the following things to diagnose this issue:`,
+		`  1. ensure that ` + srvName + ` is returning "origintunneld" service records.`,
+		`     Run your system's equivalent of: dig srv _origintunneld._tcp.` + srvName,
+		`  2. ensure that your DNS resolver is not returning compressed SRV records.`,
+		`     See GitHub issue https://github.com/golang/go/issues/27546`,
+		`     For example, you could use Cloudflare's 1.1.1.1 as your resolver:`,
+		`     https://developers.cloudflare.com/1.1.1.1/setting-up-1.1.1.1/`,
+	}
 }
 
 // EdgeDiscovery implements HA service discovery lookup.
 func EdgeDiscovery(log *zerolog.Logger, srvService string) ([][]*EdgeAddr, error) {
 	logger := log.With().Int(management.EventTypeKey, int(management.Cloudflared)).Logger()
+	srvName, err := apsy.Suffix()
+	if err != nil {
+		logger.Err(err).Msg("edge discovery: no platform to discover the edge of")
+		return nil, fmt.Errorf("%w; give the edge with --edge or TUNNEL_EDGE", err)
+	}
 	logger.Debug().
 		Int(management.EventTypeKey, int(management.Cloudflared)).
 		Str("domain", "_"+srvService+"._"+srvProto+"."+srvName).
@@ -122,7 +129,7 @@ func EdgeDiscovery(log *zerolog.Logger, srvService string) ([][]*EdgeAddr, error
 		if fallbackErr != nil || len(fallbackAddrs) == 0 {
 			// use the original DNS error `err` in messages, not `fallbackErr`
 			logger.Err(err).Msg("edge discovery: error looking up Cloudflare edge IPs: the DNS query failed")
-			for _, s := range friendlyDNSErrorLines {
+			for _, s := range friendlyDNSErrorLines(srvName) {
 				logger.Error().Msg(s)
 			}
 			return nil, errors.Wrapf(err, "Could not lookup srv records on _%v._%v.%v", srvService, srvProto, srvName)
@@ -151,6 +158,10 @@ func EdgeDiscovery(log *zerolog.Logger, srvService string) ([][]*EdgeAddr, error
 }
 
 func lookupSRVWithDOT(srvService string, srvProto string, srvName string) (cname string, addrs []*net.SRV, err error) {
+	dotServerAddr, dotServerName, err := apsy.DoTResolver()
+	if err != nil {
+		return "", nil, err
+	}
 	// Inspiration: https://github.com/artyom/dot/blob/master/dot.go
 	r := &net.Resolver{
 		PreferGo: true,

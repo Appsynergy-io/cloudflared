@@ -14,6 +14,7 @@ import (
 
 	"github.com/cloudflare/cloudflared/connection/dialopts"
 
+	"github.com/cloudflare/cloudflared/apsy"
 	"github.com/cloudflare/cloudflared/connection"
 	cfdcrypto "github.com/cloudflare/cloudflared/crypto"
 	edgedial "github.com/cloudflare/cloudflared/edgediscovery"
@@ -27,7 +28,8 @@ const (
 	perProbeDialTimeout = 5 * time.Second
 
 	// Action messages for each probe outcome.
-	actionDNSFail        = "Ensure your DNS resolver can resolve '%s'. Run: dig A %s @1.1.1.1. If that fails, contact your network administrator."
+	actionDNSFail        = "Ensure your DNS resolver can resolve '%s'. Run: dig %s. If that fails, contact your network administrator."
+	actionSRVFail        = "Ensure your DNS resolver can resolve '%s'. Run: dig SRV %s. If that fails, contact your network administrator, or give the edge with --edge."
 	actionQUICBlocked    = "Allow outbound QUIC traffic on port 7844 or use HTTP2."
 	actionHTTP2Blocked   = "Allow outbound TCP on port 7844."
 	actionAPIUnreachable = "cloudflared will still run, but automatic software updates are unavailable. " +
@@ -56,14 +58,6 @@ const (
 	detailsApiReachable              = "API is reachable"
 	detailsDNSPrerequisiteFailed     = "DNS prerequisite failed"
 	detailsTLSConfigFailed           = "TLS configuration failed"
-
-	// Region hostname templates.
-	region1Global = "region1.v2.argotunnel.com"
-	region2Global = "region2.v2.argotunnel.com"
-	region1US     = "us-region1.v2.argotunnel.com"
-	region2US     = "us-region2.v2.argotunnel.com"
-	region1Fed    = "fed-region1.v2.argotunnel.com"
-	region2Fed    = "fed-region2.v2.argotunnel.com"
 )
 
 // EdgeDNSResolver implements DNSResolver for the standard DNS-based edge
@@ -145,6 +139,7 @@ func probeDNS(
 	resolver DNSResolver,
 	region string,
 ) []ResolvedTarget {
+	srv := srvTarget(region)
 	region1Target, region2Target := regionTargets(region)
 	targets := []string{region1Target, region2Target}
 
@@ -155,8 +150,8 @@ func probeDNS(
 			detail = err.Error()
 		}
 		return []ResolvedTarget{
-			{DNSResult: newDNSCheckResult(region1Target, Fail, detail, fmt.Sprintf(actionDNSFail, region1Target, region1Target))},
-			{DNSResult: newDNSCheckResult(region2Target, Fail, detail, fmt.Sprintf(actionDNSFail, region2Target, region2Target))},
+			{DNSResult: newDNSCheckResult(region1Target, Fail, detail, fmt.Sprintf(actionSRVFail, srv, srv))},
+			{DNSResult: newDNSCheckResult(region2Target, Fail, detail, fmt.Sprintf(actionSRVFail, srv, srv))},
 		}
 	}
 
@@ -168,7 +163,7 @@ func probeDNS(
 		group := addrGroups[i]
 		if len(group) == 0 {
 			resolved = append(resolved, ResolvedTarget{
-				DNSResult: newDNSCheckResult(target, Fail, dnsNoAddressesReturned, fmt.Sprintf(actionDNSFail, target, target)),
+				DNSResult: newDNSCheckResult(target, Fail, dnsNoAddressesReturned, fmt.Sprintf(actionSRVFail, srv, srv)),
 			})
 		} else {
 			resolved = append(resolved, ResolvedTarget{
@@ -321,17 +316,20 @@ func newDNSCheckResult(target string, status Status, details, action string) Che
 	}
 }
 
-// regionTargets returns the human-readable hostnames for region1 and region2
-// based on the optional region flag value.
-func regionTargets(region string) (string, string) {
-	switch region {
-	case "us":
-		return region1US, region2US
-	case "fed":
-		return region1Fed, region2Fed
-	default:
-		return region1Global, region2Global
+// srvTarget is the SRV record edge discovery reads for the region, under the platform suffix
+// where upstream probes Cloudflare's regional hostnames.
+func srvTarget(region string) string {
+	suffix, err := apsy.Suffix()
+	if err != nil {
+		suffix = "<no platform suffix>"
 	}
+	return "_" + allregions.RegionalServiceName(region) + "._tcp." + suffix
+}
+
+// regionTargets labels the two regions the SRV record answers.
+func regionTargets(region string) (string, string) {
+	srv := srvTarget(region)
+	return srv + " #1", srv + " #2"
 }
 
 // addrsByFamily extracts one V4 and one V6 address from a resolved CNAME group

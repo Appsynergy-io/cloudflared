@@ -412,14 +412,15 @@ func TestRun_RegionFlagForwardedToDNS(t *testing.T) {
 		features.PostQuantumPrefer, nopLogger(), RunDialers{DNSResolver: dns, TCPDialer: tcp, QUICDialer: quicD, ManagementDialer: mgmt})
 
 	// DNS rows carry regional hostnames (indices 0 and 1).
-	assert.Equal(t, "us-region1.v2.argotunnel.com", report.Results[0].Target, "DNS region1")
-	assert.Equal(t, "us-region2.v2.argotunnel.com", report.Results[1].Target, "DNS region2")
+	r1, r2 := regionTargets("us")
+	assert.Equal(t, r1, report.Results[0].Target, "DNS region1")
+	assert.Equal(t, r2, report.Results[1].Target, "DNS region2")
 
-	// Transport rows reuse the same regional hostnames (QUIC: 2,3 / HTTP2: 4,5).
-	assert.Equal(t, "us-region1.v2.argotunnel.com", report.Results[2].Target, "QUIC region1")
-	assert.Equal(t, "us-region2.v2.argotunnel.com", report.Results[3].Target, "QUIC region2")
-	assert.Equal(t, "us-region1.v2.argotunnel.com", report.Results[4].Target, "HTTP2 region1")
-	assert.Equal(t, "us-region2.v2.argotunnel.com", report.Results[5].Target, "HTTP2 region2")
+	// Transport rows reuse the same regional labels (QUIC: 2,3 / HTTP2: 4,5).
+	assert.Equal(t, r1, report.Results[2].Target, "QUIC region1")
+	assert.Equal(t, r2, report.Results[3].Target, "QUIC region2")
+	assert.Equal(t, r1, report.Results[4].Target, "HTTP2 region1")
+	assert.Equal(t, r2, report.Results[5].Target, "HTTP2 region2")
 }
 
 // TestRun_QUICUsesProbeConnIndex verifies that the QUIC probe always uses the

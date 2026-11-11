@@ -11,12 +11,15 @@ import (
 	"time"
 
 	"github.com/rs/zerolog"
+
+	"github.com/cloudflare/cloudflared/apsy"
 )
 
 const (
-	featureSelectorHostname = "cfd-features.argotunnel.com"
-	lookupTimeout           = time.Second * 10
-	defaultLookupFreq       = time.Hour
+	// The TXT record under the platform suffix, where upstream reads cfd-features.argotunnel.com
+	featureSelectorLabel = "cfd-features"
+	lookupTimeout        = time.Second * 10
+	defaultLookupFreq    = time.Hour
 )
 
 // If the TXT record adds other fields, the umarshal logic will ignore those keys
@@ -179,12 +182,12 @@ type resolver interface {
 }
 
 type dnsResolver struct {
-	resolver *net.Resolver
+	lookupTXT func(ctx context.Context, name string) ([]string, error)
 }
 
 func newDNSResolver() *dnsResolver {
 	return &dnsResolver{
-		resolver: net.DefaultResolver,
+		lookupTXT: net.DefaultResolver.LookupTXT,
 	}
 }
 
@@ -192,7 +195,11 @@ func (dr *dnsResolver) lookupRecord(ctx context.Context) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, lookupTimeout)
 	defer cancel()
 
-	records, err := dr.resolver.LookupTXT(ctx, featureSelectorHostname)
+	featureSelectorHostname, err := apsy.Host(featureSelectorLabel)
+	if err != nil {
+		return nil, err
+	}
+	records, err := dr.lookupTXT(ctx, featureSelectorHostname)
 	if err != nil {
 		return nil, err
 	}

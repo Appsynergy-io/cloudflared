@@ -12,6 +12,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/cloudflare/cloudflared/apsy"
 	"github.com/cloudflare/cloudflared/ingress"
 )
 
@@ -24,8 +25,9 @@ const (
 	// 4. That cloudflared would normally query: ensuring that users with a positive security model for DNS queries
 	//    don't need to adjust anything.
 	//
-	// This hostname is one that used during the edge discovery process and as such satisfies the above constraints.
-	defaultLookupHost          = "region1.v2.argotunnel.com"
+	// Upstream looks up one of its edge discovery hostnames. The platform's own domain, the
+	// suffix edge discovery is read under, satisfies the same constraints (apsy.Suffix); with
+	// no suffix nothing is looked up and the default resolver stays.
 	defaultResolverPort uint16 = 53
 
 	// We want the refresh time to be short to accommodate DNS resolver changes locally, but not too frequent as to
@@ -115,7 +117,11 @@ func (s *DNSResolverService) update(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
 	defer cancel()
 	// Make a standard DNS request to a well-known DNS record that will last a long time
-	_, err := s.resolver.lookupNetIP(ctx, defaultLookupHost)
+	lookupHost, err := apsy.Suffix()
+	if err != nil {
+		return err
+	}
+	_, err = s.resolver.lookupNetIP(ctx, lookupHost)
 	if err != nil {
 		return err
 	}
