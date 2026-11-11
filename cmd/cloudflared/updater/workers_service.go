@@ -52,6 +52,13 @@ func NewWorkersService(currentVersion, url, targetPath string, opts Options) Ser
 
 // Check does a check in with the Workers API to get a new version update
 func (s *WorkersService) Check() (CheckResult, error) {
+	// This build is not released by Cloudflare, so Cloudflare's update service is not asked about
+	// it: the check answers what the service answers a current version, no update and no message,
+	// here, before any network use. Any other update URL is asked as before.
+	if s.url == UpdateURL || s.url == StagingUpdateURL {
+		return NewWorkersVersion("", "", "", s.targetPath, "", false), nil
+	}
+
 	client := &http.Client{
 		Timeout: clientTimeout,
 	}
