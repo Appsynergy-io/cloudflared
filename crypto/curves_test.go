@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"slices"
 	"testing"
 
@@ -101,26 +100,21 @@ func runClientServerHandshake(t *testing.T, curves []tls.CurveID) []tls.CurveID 
 	return advertisedCurves
 }
 
-// TestSupportedCurvesNegotiation verifies that the curves returned by
-// GetCurvePreferences survive a real TLS handshake unchanged, i.e. the
-// standard library advertises exactly the curves we expect. Currently only
-// PostQuantumPrefer is exercised because PostQuantumStrict would cause the
-// handshake to fail against httptest servers that do not support
-// X25519MLKEM768 server-side.
+// TestSupportedCurvesNegotiation verifies the exact advertised order for each mode.
+// Standard Go omits Cloudflare's private legacy curve; cfgo implements it. Both are
+// supported upstream build paths, and neither may omit ML-KEM or reorder preferences.
 func TestSupportedCurvesNegotiation(t *testing.T) {
 	t.Parallel()
-	for _, tcase := range []features.PostQuantumMode{features.PostQuantumPrefer} {
-		curves, err := getCurvePreferences(tcase)
+	for _, mode := range []features.PostQuantumMode{features.PostQuantumPrefer, features.PostQuantumStrict} {
+		curves, err := getCurvePreferences(mode)
 		require.NoError(t, err)
-		advertisedCurves := runClientServerHandshake(t, curves)
-		require.True(t, slices.Contains(advertisedCurves, tls.CurveP256))
-		require.True(t, slices.Contains(advertisedCurves, tls.X25519MLKEM768))
-		expectedLength := 2
-		if runtime.GOOS == "linux" {
-			// P256Kyber768Draft00 only exists in linux
-			require.True(t, slices.Contains(advertisedCurves, P256Kyber768Draft00))
-			expectedLength = 3
+		want := []tls.CurveID{tls.X25519MLKEM768}
+		if legacyKyberInToolchain {
+			want = append(want, P256Kyber768Draft00)
 		}
-		require.Len(t, advertisedCurves, expectedLength)
+		if mode == features.PostQuantumPrefer {
+			want = append(want, tls.CurveP256)
+		}
+		require.Equal(t, want, runClientServerHandshake(t, curves))
 	}
 }
