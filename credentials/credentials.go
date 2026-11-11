@@ -4,15 +4,45 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 
+	"github.com/cloudflare/cloudflared/apsy"
 	"github.com/cloudflare/cloudflared/cfapi"
 )
 
 const (
 	logFieldOriginCertPath = "originCertPath"
 	FedEndpoint            = "fed"
-	FedRampBaseApiURL      = "https://api.fed.cloudflare.com/client/v4"
-	FedRampHostname        = "management.fed.argotunnel.com"
 )
+
+// BaseApiURL is the API base, upstream's api.cloudflare.com/client/v4 under the platform suffix.
+func BaseApiURL() (string, error) {
+	host, err := apsy.Host("api")
+	if err != nil {
+		return "", err
+	}
+	return "https://" + host + "/client/v4", nil
+}
+
+// ManagementHostname is the management host, upstream's management.argotunnel.com under the
+// platform suffix.
+func ManagementHostname() (string, error) {
+	return apsy.Host("management")
+}
+
+// FedRampBaseApiURL is the FedRAMP API base, upstream's api.fed.cloudflare.com/client/v4 under the
+// platform suffix.
+func FedRampBaseApiURL() (string, error) {
+	host, err := apsy.Host("api.fed")
+	if err != nil {
+		return "", err
+	}
+	return "https://" + host + "/client/v4", nil
+}
+
+// FedRampHostname is the FedRAMP management host, upstream's management.fed.argotunnel.com under
+// the platform suffix.
+func FedRampHostname() (string, error) {
+	return apsy.Host("management.fed")
+}
 
 type User struct {
 	cert     *OriginCert

@@ -18,12 +18,12 @@ import (
 )
 
 // Test constants for repeated string values.
-// The region labels name the platform's SRV record, whatever suffix the test process has.
+// The region labels name the platform's SRV record; TestMain takes them under its suffix.
 var (
-	testRegion1Global, testRegion2Global = regionTargets("")
-	testRegion1US, testRegion2US         = regionTargets("us")
-	testRegion1Fed, testRegion2Fed       = regionTargets("fed")
-	testRegion1EU, testRegion2EU         = regionTargets("eu")
+	testRegion1Global, testRegion2Global string
+	testRegion1US, testRegion2US         string
+	testRegion1Fed, testRegion2Fed       string
+	testRegion1EU, testRegion2EU         string
 )
 
 const testEdgePort = 7844
@@ -281,13 +281,13 @@ func TestProbeManagementAPI_Success(t *testing.T) {
 	defer ctrl.Finish()
 
 	dialer := mocks.NewMockManagementDialer(ctrl)
-	dialer.EXPECT().DialContext(gomock.Any(), "tcp", "api.cloudflare.com:443").Return(&net.TCPConn{}, nil)
+	dialer.EXPECT().DialContext(gomock.Any(), "tcp", "api.platform.example:443").Return(&net.TCPConn{}, nil)
 
 	result := probeManagementAPI(context.Background(), dialer)
 
 	assert.Equal(t, ProbeTypeManagementAPI, result.Type)
-	assert.Equal(t, "Cloudflare API", result.Component)
-	assert.Equal(t, "api.cloudflare.com:443", result.Target)
+	assert.Equal(t, "Platform API", result.Component)
+	assert.Equal(t, "api.platform.example:443", result.Target)
 	assert.Equal(t, Pass, result.ProbeStatus)
 	assert.Equal(t, detailsApiReachable, result.Details)
 }
@@ -298,7 +298,7 @@ func TestProbeManagementAPI_DialError(t *testing.T) {
 	defer ctrl.Finish()
 
 	dialer := mocks.NewMockManagementDialer(ctrl)
-	dialer.EXPECT().DialContext(gomock.Any(), "tcp", "api.cloudflare.com:443").Return(nil, errors.New("connection refused"))
+	dialer.EXPECT().DialContext(gomock.Any(), "tcp", "api.platform.example:443").Return(nil, errors.New("connection refused"))
 
 	result := probeManagementAPI(context.Background(), dialer)
 
@@ -543,4 +543,15 @@ func TestRegionTargetsNameThePlatformsRecordNotCloudflares(t *testing.T) {
 	assert.Equal(t, "_us-v2-origintunneld._tcp.platform.example #1", r1)
 	assert.Equal(t, "_us-v2-origintunneld._tcp.platform.example #2", r2)
 	assert.NotContains(t, actionDNSFail+actionSRVFail, "1.1.1.1")
+}
+
+func TestNoSuffixDialsNoAPI(t *testing.T) {
+	t.Setenv(apsy.SuffixEnv, "")
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+	// No DialContext expected: gomock fails the test on any call.
+	dialer := mocks.NewMockManagementDialer(ctrl)
+	result := probeManagementAPI(context.Background(), dialer)
+	assert.Equal(t, Skip, result.ProbeStatus)
+	assert.NotContains(t, result.Target, "cloudflare")
 }

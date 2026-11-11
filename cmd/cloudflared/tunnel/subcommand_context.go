@@ -15,13 +15,12 @@ import (
 	"github.com/urfave/cli/v2"
 
 	"github.com/cloudflare/cloudflared/cfapi"
+	"github.com/cloudflare/cloudflared/cmd/cloudflared/cliutil"
 	cfdflags "github.com/cloudflare/cloudflared/cmd/cloudflared/flags"
 	"github.com/cloudflare/cloudflared/connection"
 	"github.com/cloudflare/cloudflared/credentials"
 	"github.com/cloudflare/cloudflared/logger"
 )
-
-const fedRampBaseApiURL = "https://api.fed.cloudflare.com/client/v4"
 
 type invalidJSONCredentialError struct {
 	err  error
@@ -76,10 +75,13 @@ func (sc *subcommandContext) client() (cfapi.Client, error) {
 
 	var apiURL string
 	if cred.IsFEDEndpoint() {
-		sc.log.Info().Str("api-url", fedRampBaseApiURL).Msg("using fedramp base api")
-		apiURL = fedRampBaseApiURL
-	} else {
-		apiURL = sc.c.String(cfdflags.ApiURL)
+		apiURL, err = credentials.FedRampBaseApiURL()
+		if err != nil {
+			return nil, err
+		}
+		sc.log.Info().Str("api-url", apiURL).Msg("using fedramp base api")
+	} else if apiURL, err = cliutil.RequirePlatformValue(cfdflags.ApiURL, sc.c.String(cfdflags.ApiURL)); err != nil {
+		return nil, err
 	}
 
 	sc.tunnelstoreClient, err = cred.Client(apiURL, buildInfo.UserAgent(), sc.log)

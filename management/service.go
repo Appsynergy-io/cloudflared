@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +17,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
 	"nhooyr.io/websocket"
+
+	"github.com/cloudflare/cloudflared/apsy"
 )
 
 const (
@@ -32,10 +35,11 @@ const (
 )
 
 var (
-	// CORS middleware required to allow dash to access management.argotunnel.com requests
+	// CORS middleware required to allow the platform's dashboard to reach management requests
 	corsHandler = cors.Handler(cors.Options{
-		// Allows for any subdomain of cloudflare.com
-		AllowedOrigins: []string{"https://*.cloudflare.com"},
+		// The platform's dashboards, where upstream allows any subdomain of cloudflare.com; none at
+		// all when no suffix is known.
+		AllowOriginFunc: dashOrigin,
 		// Required to present cookies or other authentication across origin boundries
 		AllowCredentials: true,
 		MaxAge:           300, // Maximum value not ignored by any of major browsers
@@ -247,9 +251,8 @@ func (m *ManagementService) parseFilters(c *websocket.Conn, event *ClientEvent, 
 // Management Streaming Logs accept handler
 func (m *ManagementService) logs(w http.ResponseWriter, r *http.Request) {
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		OriginPatterns: []string{
-			"*.cloudflare.com",
-		},
+		// The dashboards' hosts, or none, which leaves only the request's own host
+		OriginPatterns: dashHosts(),
 	})
 	if err != nil {
 		m.log.Debug().Msgf("management handshake: %s", err.Error())
@@ -333,4 +336,29 @@ func (m *ManagementService) logs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// dashHosts are the dashboards upstream's "*.cloudflare.com" allowance exists for, host for host
+// under the platform suffix: dash.cloudflare.com, one.dash.cloudflare.com and the FedRAMP
+// dash.fed.cloudflare.com. No other host under the suffix is admitted, and none without a suffix.
+func dashHosts() []string {
+	var hosts []string
+	for _, label := range []string{"dash", "one.dash", "dash.fed"} {
+		host, err := apsy.Host(label)
+		if err != nil {
+			return nil
+		}
+		hosts = append(hosts, host)
+	}
+	return hosts
+}
+
+// dashOrigin admits exactly the dashboards' https origins.
+func dashOrigin(_ *http.Request, origin string) bool {
+	for _, host := range dashHosts() {
+		if strings.EqualFold(origin, "https://"+host) {
+			return true
+		}
+	}
+	return false
 }

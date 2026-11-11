@@ -175,7 +175,7 @@ func TestRun_EdgeTransportSettings(t *testing.T) {
 						dialopts.DialOpts{SkipPortReuse: true}).Return(quicConn, nil)
 				}
 			}
-			mgmt.EXPECT().DialContext(gomock.Any(), "tcp", targetAPI).Return(nopConn{}, nil)
+			mgmt.EXPECT().DialContext(gomock.Any(), "tcp", "api.platform.example:443").Return(nopConn{}, nil)
 
 			report := Run(t.Context(), emptyCert, cfg, features.PostQuantumPrefer, nopLogger(), RunDialers{
 				DNSResolver: dns, TCPDialer: tcp, QUICDialer: quicD, ManagementDialer: mgmt,

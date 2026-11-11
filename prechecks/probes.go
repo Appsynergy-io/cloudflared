@@ -32,19 +32,19 @@ const (
 	actionSRVFail        = "Ensure your DNS resolver can resolve '%s'. Run: dig SRV %s. If that fails, contact your network administrator, or give the edge with --edge."
 	actionQUICBlocked    = "Allow outbound QUIC traffic on port 7844 or use HTTP2."
 	actionHTTP2Blocked   = "Allow outbound TCP on port 7844."
-	actionAPIUnreachable = "cloudflared will still run, but automatic software updates are unavailable. " +
-		"Ensure port 443 TCP to api.cloudflare.com is open if you want auto-updates."
+	actionAPIUnreachable = "cloudflared will still run, but the platform's API is unreachable from this host. " +
+		"Ensure port 443 TCP to the platform's API host is open if you manage tunnels from here."
 
 	// Component names for CheckResult.
 	componentDNSResolution   = "DNS Resolution"
 	componentUDPConnectivity = "UDP Connectivity"
 	componentTCPConnectivity = "TCP Connectivity"
-	componentCloudflareAPI   = "Cloudflare API"
+	componentCloudflareAPI   = "Platform API"
 
 	// Target identifiers for CheckResult.
 	targetPortQUIC  = "Port 7844 (QUIC)"
 	targetPortHTTP2 = "Port 7844 (HTTP/2)"
-	targetAPI       = "api.cloudflare.com:443"
+	noAPITarget     = "No API target (no platform suffix)"
 	noDNSTarget     = "No DNS target (Using edge flag)"
 
 	// Details messages for CheckResult.
@@ -263,11 +263,16 @@ func probeHTTP2(ctx context.Context, tlsConfig *tls.Config, dialer TCPDialer, ad
 	}
 }
 
-// probeManagementAPI tests TCP connectivity to api.cloudflare.com:443. A
-// successful TCP connection (no TLS handshake required) confirms the port is
-// reachable. This probe is always a soft failure: the tunnel can run without
-// it, but automatic software updates will be unavailable.
+// probeManagementAPI tests TCP connectivity to the platform's API host, api.SUFFIX:443, where
+// upstream dials api.cloudflare.com. A successful TCP connection (no TLS handshake required)
+// confirms the port is reachable. This probe is always a soft failure: the tunnel can run
+// without it. With no platform suffix nothing is dialled and the probe is skipped.
 func probeManagementAPI(ctx context.Context, dialer ManagementDialer) CheckResult {
+	apiHost, err := apsy.Host("api")
+	if err != nil {
+		return skipResult(ProbeTypeManagementAPI, componentCloudflareAPI, noAPITarget, err.Error())
+	}
+	targetAPI := net.JoinHostPort(apiHost, "443")
 	dialCtx, cancel := context.WithTimeout(ctx, perProbeDialTimeout)
 	defer cancel()
 

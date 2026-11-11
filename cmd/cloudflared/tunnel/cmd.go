@@ -445,9 +445,13 @@ func StartServer(
 	isFEDEndpoint := namedTunnel.Credentials.Endpoint == credentials.FedEndpoint
 	var managementHostname string
 	if isFEDEndpoint {
-		managementHostname = credentials.FedRampHostname
-	} else {
-		managementHostname = c.String(cfdflags.ManagementHostname)
+		managementHostname, err = credentials.FedRampHostname()
+		if err != nil {
+			return err
+		}
+	} else if managementHostname, err = cliutil.RequirePlatformValue(cfdflags.ManagementHostname, c.String(cfdflags.ManagementHostname)); err != nil {
+		// An empty hostname would make the management rule match every request.
+		return err
 	}
 
 	mgmt := management.New(
@@ -735,7 +739,7 @@ func tunnelFlags(shouldHide bool) []cli.Flag {
 			Name:    cfdflags.ApiURL,
 			Usage:   "Base URL for Cloudflare API v4",
 			EnvVars: []string{"TUNNEL_API_URL"},
-			Value:   "https://api.cloudflare.com/client/v4",
+			Value:   cliutil.PlatformDefault(credentials.BaseApiURL),
 			Hidden:  true,
 		}),
 		altsrc.NewDurationFlag(&cli.DurationFlag{
@@ -1084,7 +1088,7 @@ func configureProxyFlags(shouldHide bool) []cli.Flag {
 			Usage:   "Management hostname to signify incoming management requests",
 			EnvVars: []string{"TUNNEL_MANAGEMENT_HOSTNAME"},
 			Hidden:  true,
-			Value:   "management.argotunnel.com",
+			Value:   cliutil.PlatformDefault(credentials.ManagementHostname),
 		}),
 		altsrc.NewStringFlag(&cli.StringFlag{
 			Name:    "service-op-ip",

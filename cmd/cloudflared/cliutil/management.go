@@ -32,9 +32,12 @@ func GetManagementToken(c *cli.Context, log *zerolog.Logger, res cfapi.Managemen
 
 	var apiURL string
 	if userCreds.IsFEDEndpoint() {
-		apiURL = credentials.FedRampBaseApiURL
-	} else {
-		apiURL = c.String(cfdflags.ApiURL)
+		apiURL, err = credentials.FedRampBaseApiURL()
+		if err != nil {
+			return "", err
+		}
+	} else if apiURL, err = RequirePlatformValue(cfdflags.ApiURL, c.String(cfdflags.ApiURL)); err != nil {
+		return "", err
 	}
 
 	client, err := userCreds.Client(apiURL, buildInfo.UserAgent(), log)

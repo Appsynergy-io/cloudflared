@@ -103,7 +103,7 @@ func buildTailCommand(subcommands []*cli.Command) *cli.Command {
 				Usage:   "Management hostname to signify incoming management requests",
 				EnvVars: []string{"TUNNEL_MANAGEMENT_HOSTNAME"},
 				Hidden:  true,
-				Value:   "management.argotunnel.com",
+				Value:   cliutil.PlatformDefault(credentials.ManagementHostname),
 			},
 			&cli.StringFlag{
 				Name:   "trace",
@@ -223,9 +223,12 @@ func buildURL(c *cli.Context, log *zerolog.Logger, res cfapi.ManagementResource)
 
 	var managementHostname string
 	if claims.IsFed() {
-		managementHostname = credentials.FedRampHostname
-	} else {
-		managementHostname = c.String(cfdflags.ManagementHostname)
+		managementHostname, err = credentials.FedRampHostname()
+		if err != nil {
+			return url.URL{}, err
+		}
+	} else if managementHostname, err = cliutil.RequirePlatformValue(cfdflags.ManagementHostname, c.String(cfdflags.ManagementHostname)); err != nil {
+		return url.URL{}, err
 	}
 
 	query := url.Values{}
