@@ -140,7 +140,15 @@ endif
 #for FIPS compliance, FPM defaults to MD5.
 RPM_DIGEST := --rpm-digest sha256
 
-GO_TEST_LOG_OUTPUT = /tmp/gotest.log
+# On Windows the recipe's sh (MSYS) maps /tmp to its own temp directory, while native Go tools
+# read /tmp as \tmp on the current drive, so tee and gotestfmt would name different files; a
+# relative path is the same file to both. Elsewhere the log stays where ci-test, ci-test-arm64
+# and ci-fips-test read it.
+ifeq ($(LOCAL_OS), windows)
+	GO_TEST_LOG_OUTPUT = gotest.log
+else
+	GO_TEST_LOG_OUTPUT = /tmp/gotest.log
+endif
 
 .PHONY: all
 all: cloudflared test
